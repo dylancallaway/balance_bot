@@ -44,6 +44,8 @@ Quaternion q;        // [w, x, y, z]         quaternion container
 VectorFloat gravity; // [x, y, z]            gravity vector
 float ypr[3];        // [yaw, pitch, roll]   yaw/pitch/roll container and gravity vector
 
+int current_millis, last_millis;
+
 // ================================================================
 // ===               INTERRUPT DETECTION ROUTINE                ===
 // ================================================================
@@ -83,7 +85,9 @@ void setup()
 
     // initialize device
     Serial.println(F("Initializing I2C devices..."));
+
     mpu.initialize();
+
     pinMode(INTERRUPT_PIN, INPUT);
 
     // verify connection
@@ -142,73 +146,41 @@ void setup()
 
 void loop()
 {
+    // current_millis = micros();
+
     // if programming failed, don't try to do anything
     if (!dmpReady)
         return;
 
-    // wait for MPU interrupt or extra packet(s) available
-    while (!mpuInterrupt && fifoCount < packetSize)
-    {
-        if (mpuInterrupt && fifoCount < packetSize)
-        {
-            // try to get out of the infinite loop
-            fifoCount = mpu.getFIFOCount();
-        }
-        // other program behavior stuff here
-        // .
-        // .
-        // .
-        // if you are really paranoid you can frequently test in between other
-        // stuff to see if mpuInterrupt is true, and if so, "break;" from the
-        // while() loop to immediately process the MPU data
-        // .
-        // .
-        // .
-    }
-
-    // reset interrupt flag and get INT_STATUS byte
-    mpuInterrupt = false;
-    mpuIntStatus = mpu.getIntStatus();
-
     // get current FIFO count
     fifoCount = mpu.getFIFOCount();
 
-    // check for overflow (this should never happen unless our code is too inefficient)
-    if ((mpuIntStatus & _BV(MPU6050_INTERRUPT_FIFO_OFLOW_BIT)) || fifoCount >= 1024)
-    {
-        // reset so we can continue cleanly
-        mpu.resetFIFO();
+    // wait for correct available data length, should be a VERY short wait
+    while (fifoCount < packetSize)
         fifoCount = mpu.getFIFOCount();
-        Serial.println(F("FIFO overflow!"));
 
-        // otherwise, check for DMP data ready interrupt (this should happen frequently)
-    }
-    else if (mpuIntStatus & _BV(MPU6050_INTERRUPT_DMP_INT_BIT))
-    {
-        // wait for correct available data length, should be a VERY short wait
-        while (fifoCount < packetSize)
-            fifoCount = mpu.getFIFOCount();
+    // read a packet from FIFO
+    mpu.getFIFOBytes(fifoBuffer, packetSize);
 
-        // read a packet from FIFO
-        mpu.getFIFOBytes(fifoBuffer, packetSize);
+    // track FIFO count here in case there is > 1 packet available
+    // (this lets us immediately read more without waiting for an interrupt)
+    fifoCount -= packetSize;
 
-        // track FIFO count here in case there is > 1 packet available
-        // (this lets us immediately read more without waiting for an interrupt)
-        fifoCount -= packetSize;
+    mpu.dmpGetQuaternion(&q, fifoBuffer);
+    mpu.dmpGetGravity(&gravity, &q);
+    mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
+    Serial.print("YAW: ");
+    Serial.print(ypr[0]);
+    Serial.print("\tPITCH: ");
+    Serial.print(ypr[1]);
+    Serial.print("\tROLL: ");
+    Serial.println(ypr[2]);
 
-        mpu.dmpGetQuaternion(&q, fifoBuffer);
-        mpu.dmpGetGravity(&gravity, &q);
-        mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
-        Serial.print("YAW: ");
-        Serial.print(ypr[0]);
-        Serial.print("\tPITCH: ");
-        Serial.print(ypr[1]);
-        Serial.print("\tROLL: ");
-        Serial.println(ypr[2]);
+    // blink LED to indicate activity
+    blinkState = !blinkState;
+    digitalWrite(LED_PIN, blinkState);
+    // last_millis = micros();
+    // Serial.println(last_millis - current_millis);
 
-        // blink LED to indicate activity
-        blinkState = !blinkState;
-        digitalWrite(LED_PIN, blinkState);
-        delay(5);
-    }
+    // delay(10);
 }
