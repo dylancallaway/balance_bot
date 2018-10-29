@@ -9,10 +9,6 @@
 #include "Wire.h"
 #endif
 
-// Set FIFO rate for MPU
-// Formula: Rate (Hz) = 200Hz / (DIVISOR + 1)
-#define MPU6050_DMP_FIFO_RATE_DIVISOR 0x00
-
 // class default I2C address is 0x68
 // specific I2C addresses may be passed as a parameter here
 // AD0 low = 0x68 (default for SparkFun breakout and InvenSense evaluation board)
@@ -43,6 +39,9 @@ uint8_t fifoBuffer[64]; // FIFO storage buffer
 Quaternion q;        // [w, x, y, z]         quaternion container
 VectorFloat gravity; // [x, y, z]            gravity vector
 float ypr[3];        // [yaw, pitch, roll]   yaw/pitch/roll container and gravity vector
+
+// timing
+int t1 = 0, t2 = 0;
 
 // ================================================================
 // ===               INTERRUPT DETECTION ROUTINE                ===
@@ -142,6 +141,8 @@ void setup()
 
 void loop()
 {
+    t1 = t2;
+    t2 = micros();
     // if programming failed, don't try to do anything
     if (!dmpReady)
         return;
@@ -199,16 +200,17 @@ void loop()
         mpu.dmpGetQuaternion(&q, fifoBuffer);
         mpu.dmpGetGravity(&gravity, &q);
         mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
-        Serial.print("YAW: ");
-        Serial.print(ypr[0]);
-        Serial.print("\tPITCH: ");
-        Serial.print(ypr[1]);
-        Serial.print("\tROLL: ");
-        Serial.println(ypr[2]);
+        // Serial.print("YAW: ");
+        // Serial.print(ypr[0]);
+        // Serial.print("\tPITCH: ");
+        // Serial.print(ypr[1]);
+        // Serial.print("\tROLL: ");
+        // Serial.println(ypr[2]);
 
         // blink LED to indicate activity
         blinkState = !blinkState;
         digitalWrite(LED_PIN, blinkState);
-        delay(5);
+        Serial.println(t2 - t1);
+        delay(1);
     }
 }
