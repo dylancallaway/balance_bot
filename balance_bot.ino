@@ -211,6 +211,6 @@ void loop()
         blinkState = !blinkState;
         digitalWrite(LED_PIN, blinkState);
         Serial.println(t2 - t1);
-        delay(1);
+        delayMicroseconds(1000);
     }
 }
