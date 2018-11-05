@@ -1,5 +1,7 @@
-#include "I2Cdev.h"
+#include <AccelStepper.h>
+#include <MultiStepper.h>
 
+#include "I2Cdev.h"
 #include "MPU6050_6Axis_MotionApps20.h"
 //#include "MPU6050.h" // not necessary if using MotionApps include file
 
@@ -25,7 +27,8 @@ MPU6050 mpu(0x68);
 
 #define INTERRUPT_PIN 2 // use pin 2 on Arduino Uno & most boards
 #define LED_PIN 13		// (Arduino is 13, Teensy is 11, Teensy++ is 6)
-bool blinkState = false;
+bool blink_state = false;
+int loop_count = 0;
 
 // MPU control/status vars
 bool dmpReady = false;  // set true if DMP init was successful
@@ -39,6 +42,28 @@ uint8_t fifoBuffer[64]; // FIFO storage buffer
 Quaternion q;		 // [w, x, y, z]         quaternion container
 VectorFloat gravity; // [x, y, z]            gravity vector
 float ypr[3];		 // [yaw, pitch, roll]   yaw/pitch/roll container and gravity vector
+
+// PID setup
+// #define LOOP_PERIOD 10
+float last_micros = 0, current_micros = 0, LOOP_PERIOD = 0;
+#define kp 0
+#define ki 0
+#define kd 0
+float p = 0, i = 0, d = 0, output = 0;
+// const float kp = 0, ki = 0, kd = 0;
+// const float setpoint = 0; // "Perfect" vertical = 0.0470
+#define setpoint 0
+float error = 0, last_error = 0;
+
+#define MOTOR_STEPS_REV 200
+
+#define SLEEP_A 52
+#define STEP_A 3
+#define DIR_A 50
+
+#define SLEEP_B 48
+#define STEP_B 4
+#define DIR_B 46
 
 // ================================================================
 // ===               INTERRUPT DETECTION ROUTINE                ===
@@ -130,6 +155,13 @@ void setup()
 
 	// configure LED for output
 	pinMode(LED_PIN, OUTPUT);
+	digitalWrite(LED_PIN, blink_state);
+
+	pinMode(SLEEP_A, OUTPUT);
+	digitalWrite(SLEEP_A, HIGH);
+
+	pinMode(SLEEP_B, OUTPUT);
+	digitalWrite(SLEEP_B, HIGH);
 }
 
 // ================================================================
@@ -195,16 +227,49 @@ void loop()
 		mpu.dmpGetQuaternion(&q, fifoBuffer);
 		mpu.dmpGetGravity(&gravity, &q);
 		mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
-		Serial.print("YAW: ");
-		Serial.print(ypr[0]);
-		Serial.print("\tPITCH: ");
-		Serial.print(ypr[1]);
-		Serial.print("\tROLL: ");
-		Serial.println(ypr[2]);
 
-		// blink LED to indicate activity
-		blinkState = !blinkState;
-		digitalWrite(LED_PIN, blinkState);
+		last_micros = current_micros;
+		current_micros = micros();
+		LOOP_PERIOD = (current_micros - last_micros) / 1000;
+
+		// PID
+		// Pitch is input for this configuration
+		error = ypr[1] - setpoint;
+		p = kp * error;
+		i += ki * LOOP_PERIOD * error;
+		d = kd * (error - last_error) / LOOP_PERIOD; // Loop period in ms
+		last_error = error;
+		output = p + i + d;
+
+		// if (output >= 0)
+		// {
+
+		// }
+		// else if (output < 0)
+		// {
+		// }
+
+		// Serial.print("PITCH: ");
+		// Serial.print(ypr[1], 4);
+
+		Serial.print("\tERROR: ");
+		Serial.print(error, 4);
+
+		// Serial.print("\tLOOP_PERIOD: ");
+		// Serial.println(LOOP_PERIOD, 4);
+
+		Serial.print("\tOUTPUT: ");
+		Serial.println(output, 4);
+
+		if (loop_count >= 50)
+		{
+			// blink LED to indicate activity
+			blink_state = !blink_state;
+			digitalWrite(LED_PIN, blink_state);
+			loop_count = 0;
+		}
+
+		loop_count = loop_count + 1;
 		delay(1);
 	}
 }
