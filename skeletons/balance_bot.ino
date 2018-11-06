@@ -1,3 +1,5 @@
+#include "TimerOne.h"
+
 #include "AccelStepper.h"
 #include "MultiStepper.h"
 
@@ -188,71 +190,14 @@ void setup()
 
 void loop()
 {
-	// if programming failed, don't try to do anything
-	if (!dmpReady)
-		return;
 
-	// wait for MPU interrupt or extra packet(s) available
-	while (!mpuInterrupt && fifoCount < packetSize)
+	if (mpuInterrupt)
 	{
-		if (mpuInterrupt && fifoCount < packetSize)
-		{
-			// try to get out of the infinite loop
-			fifoCount = mpu.getFIFOCount();
-		}
-		// other program behavior stuff here
-		// .
-		// .
-		// .
-		// if you are really paranoid you can frequently test in between other
-		// stuff to see if mpuInterrupt is true, and if so, "break;" from the
-		// while() loop to immediately process the MPU data
-		// .
-		// .
-		// .
-		stepperA.runSpeed();
-	}
-
-	// reset interrupt flag and get INT_STATUS byte
-	mpuInterrupt = false;
-	mpuIntStatus = mpu.getIntStatus();
-
-	// get current FIFO count
-	fifoCount = mpu.getFIFOCount();
-
-	// check for overflow (this should never happen unless our code is too inefficient)
-	if ((mpuIntStatus & _BV(MPU6050_INTERRUPT_FIFO_OFLOW_BIT)) || fifoCount >= 1024)
-	{
-		// reset so we can continue cleanly
-		mpu.resetFIFO();
-		fifoCount = mpu.getFIFOCount();
-		Serial.println(F("FIFO overflow!"));
-
-		// otherwise, check for DMP data ready interrupt (this should happen frequently)
-	}
-	else if (mpuIntStatus & _BV(MPU6050_INTERRUPT_DMP_INT_BIT))
-	{
-		// wait for correct available data length, should be a VERY short wait
-		while (fifoCount < packetSize)
-			fifoCount = mpu.getFIFOCount();
-
-		// read a packet from FIFO
 		mpu.getFIFOBytes(fifoBuffer, packetSize);
-
-		// track FIFO count here in case there is > 1 packet available
-		// (this lets us immediately read more without waiting for an interrupt)
-		fifoCount -= packetSize;
-
 		mpu.dmpGetQuaternion(&q, fifoBuffer);
 		mpu.dmpGetGravity(&gravity, &q);
 		mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
 
-		last_micros = current_micros;
-		current_micros = micros();
-		LOOP_PERIOD = (current_micros - last_micros) / 1000;
-
-		// PID
-		// Pitch is input for this configuration
 		error = ypr[1] - setpoint;
 		p = kp * error;
 		i += ki * LOOP_PERIOD * error;
@@ -260,50 +205,115 @@ void loop()
 		last_error = error;
 		output = p + i + d;
 
-		// MOTOR TESTING
-
-		stepperA.setSpeed(0);
-		stepperA.runSpeed();
-		// long positions[2]; // Array of desired stepper positions
-
-		// positions[0] = 200;
-		// positions[1] = 200;
-		// stepperA.setSpeed(200);
-		// stepperB.setSpeed(200);
-		// steppers.moveTo(positions);
-		// steppers.runSpeedToPosition(); // Blocks until all are in position
-
-		//MOTOR TESTING
-
-		// if (output >= 0)
-		// {
-
-		// }
-		// else if (output < 0)
-		// {
-		// }
-
-		// Serial.print("PITCH: ");
-		// Serial.print(ypr[1], 4);
-
-		Serial.print("\tERROR: ");
-		Serial.print(error, 4);
-
-		// Serial.print("\tLOOP_PERIOD: ");
-		// Serial.println(LOOP_PERIOD, 4);
-
-		Serial.print("\tOUTPUT: ");
-		Serial.println(output, 4);
-
-		if (loop_count >= 50)
-		{
-			// blink LED to indicate activity
-			blink_state = !blink_state;
-			digitalWrite(LED_PIN, blink_state);
-			loop_count = 0;
-		}
-
-		loop_count = loop_count + 1;
-		delay(1);
+		mpuInterrupt = false;
 	}
+	// // if programming failed, don't try to do anything
+	// if (!dmpReady)
+	// 	return;
+
+	// // wait for MPU interrupt or extra packet(s) available
+	// while (!mpuInterrupt && fifoCount < packetSize)
+	// {
+	// 	if (mpuInterrupt && fifoCount < packetSize)
+	// 	{
+	// 		// try to get out of the infinite loop
+	// 		fifoCount = mpu.getFIFOCount();
+	// 	}
+	// 	// other program behavior stuff here
+	// 	// .
+	// 	// .
+	// 	// .
+	// 	// if you are really paranoid you can frequently test in between other
+	// 	// stuff to see if mpuInterrupt is true, and if so, "break;" from the
+	// 	// while() loop to immediately process the MPU data
+	// 	// .
+	// 	// .
+	// 	// .
+	// }
+
+	// // reset interrupt flag and get INT_STATUS byte
+	// mpuInterrupt = false;
+	// mpuIntStatus = mpu.getIntStatus();
+
+	// get current FIFO count
+	// fifoCount = mpu.getFIFOCount();
+
+	// check for overflow (this should never happen unless our code is too inefficient)
+	// if ((mpuIntStatus & _BV(MPU6050_INTERRUPT_FIFO_OFLOW_BIT)) || fifoCount >= 1024)
+
+	// wait for correct available data length, should be a VERY short wait
+	// while (fifoCount < packetSize)
+	// 	fifoCount = mpu.getFIFOCount();
+
+	// if (fifoCount >= 1024)
+	// {
+	// 	// reset so we can continue cleanly
+	// 	mpu.resetFIFO();
+	// 	fifoCount = mpu.getFIFOCount();
+	// 	Serial.println(F("FIFO overflow!"));
+	// }
+	// 	// otherwise, check for DMP data ready interrupt (this should happen frequently)
+	// }
+	// else if (mpuIntStatus & _BV(MPU6050_INTERRUPT_DMP_INT_BIT))
+	// {
+
+	// read a packet from FIFO
+	// mpu.getFIFOBytes(fifoBuffer, packetSize);
+
+	// track FIFO count here in case there is > 1 packet available
+	// (this lets us immediately read more without waiting for an interrupt)
+	// fifoCount -= packetSize;
+
+	// PID
+	// Pitch is input for this configuration
+
+	// MOTOR TESTING
+
+	// long positions[2]; // Array of desired stepper positions
+
+	// positions[0] = 200;
+	// positions[1] = 200;
+	// stepperA.setSpeed(200);
+	// stepperB.setSpeed(200);
+	// steppers.moveTo(positions);
+	// steppers.runSpeedToPosition(); // Blocks until all are in position
+
+	//MOTOR TESTING
+
+	// if (output >= 0)
+	// {
+
+	// }
+	// else if (output < 0)
+	// {
+	// }
+
+	// Serial.print("PITCH: ");
+	// Serial.print(ypr[1], 4);
+
+	// Serial.print("\tERROR: ");
+	// Serial.print(error, 4);
+
+	Serial.print("\tLOOP_PERIOD: ");
+	Serial.println(LOOP_PERIOD, 4);
+
+	// Serial.print("\tOUTPUT: ");
+	// Serial.println(output, 4);
+
+	if (loop_count >= 50)
+	{
+		// Blink LED to indicate activity
+		blink_state = !blink_state;
+		digitalWrite(LED_PIN, blink_state);
+		loop_count = 0;
+	}
+
+	loop_count = loop_count + 1;
+
+	stepperA.setSpeed(0);
+	stepperA.runSpeed();
+
+	last_micros = current_micros;
+	current_micros = micros();
+	LOOP_PERIOD = (current_micros - last_micros) / 1000;
 }
