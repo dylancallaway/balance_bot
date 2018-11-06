@@ -1,3 +1,6 @@
+#include "TimerOne.h"
+#include "TimerThree.h"
+
 #include "AccelStepper.h"
 #include "MultiStepper.h"
 
@@ -46,31 +49,32 @@ float ypr[3];		 // [yaw, pitch, roll]   yaw/pitch/roll container and gravity vec
 // PID setup
 // #define LOOP_PERIOD 10
 float last_micros = 0, current_micros = 0, LOOP_PERIOD = 0;
-#define kp 0
-#define ki 0
-#define kd 0
 float p = 0, i = 0, d = 0, output = 0;
-// const float kp = 0, ki = 0, kd = 0;
-// const float setpoint = 0; // "Perfect" vertical = 0.0470
-#define setpoint 0
+const float kp = -1000, ki = 0, kd = 0;
+float setpoint = -1.5708;
 float error = 0, last_error = 0;
 
 // Stepper motor setup
 #define MOTOR_STEPS_REV 200
-#define STEPPER_MAX_SPEED 1000
+#define STEPPER_MIN_PERIOD 1000
 
 #define SLEEP_A 52
-#define STEP_A 3
+#define STEP_A 11
 #define DIR_A 50
 
 #define SLEEP_B 48
-#define STEP_B 4
+#define STEP_B 5
 #define DIR_B 46
 
-AccelStepper stepperA(AccelStepper::DRIVER, STEP_A, DIR_A);
-AccelStepper stepperB(AccelStepper::DRIVER, STEP_B, DIR_B);
+// AccelStepper stepperA(AccelStepper::DRIVER, STEP_A, DIR_A);
+// AccelStepper stepperB(AccelStepper::DRIVER, STEP_B, DIR_B);
 
-MultiStepper steppers;
+// MultiStepper steppers;
+
+void run_step(void)
+{
+	// stepperA.runSpeed();
+}
 
 // ================================================================
 // ===               INTERRUPT DETECTION ROUTINE                ===
@@ -88,6 +92,7 @@ void dmpDataReady()
 
 void setup()
 {
+
 // join I2C bus (I2Cdev library doesn't do this automatically)
 #if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
 	Wire.begin();
@@ -100,8 +105,7 @@ void setup()
 	// (115200 chosen because it is required for Teapot Demo output, but it's
 	// really up to you depending on your project)
 	Serial.begin(115200);
-	while (!Serial)
-		; // wait for Leonardo enumeration, others continue immediately
+	delay(100);
 
 	// NOTE: 8MHz or slower host processors, like the Teensy @ 3.3V or Arduino
 	// Pro Mini running at 3.3V, cannot handle this baud rate reliably due to
@@ -165,21 +169,17 @@ void setup()
 	digitalWrite(LED_PIN, blink_state);
 
 	// Configure stepper motors
+	Timer1.initialize();
+	Timer1.pwm(STEP_A, 256);
+
 	pinMode(SLEEP_A, OUTPUT);
 	digitalWrite(SLEEP_A, HIGH);
 
 	pinMode(SLEEP_B, OUTPUT);
 	digitalWrite(SLEEP_B, HIGH);
 
-	stepperA.setMaxSpeed(STEPPER_MAX_SPEED);
-	stepperB.setMaxSpeed(STEPPER_MAX_SPEED);
-
-	stepperA.setAcceleration(100);
-	stepperB.setAcceleration(100);
-
-	// Give them to MultiStepper to manage
-	steppers.addStepper(stepperA);
-	steppers.addStepper(stepperB);
+	// stepperA.setMaxSpeed(STEPPER_MAX_SPEED);
+	// stepperA.setSpeed(0);
 }
 
 // ================================================================
@@ -201,16 +201,6 @@ void loop()
 			fifoCount = mpu.getFIFOCount();
 		}
 		// other program behavior stuff here
-		// .
-		// .
-		// .
-		// if you are really paranoid you can frequently test in between other
-		// stuff to see if mpuInterrupt is true, and if so, "break;" from the
-		// while() loop to immediately process the MPU data
-		// .
-		// .
-		// .
-		stepperA.runSpeed();
 	}
 
 	// reset interrupt flag and get INT_STATUS byte
@@ -247,63 +237,57 @@ void loop()
 		mpu.dmpGetGravity(&gravity, &q);
 		mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
 
-		last_micros = current_micros;
-		current_micros = micros();
-		LOOP_PERIOD = (current_micros - last_micros) / 1000;
-
 		// PID
 		// Pitch is input for this configuration
 		error = ypr[1] - setpoint;
-		p = kp * error;
-		i += ki * LOOP_PERIOD * error;
-		d = kd * (error - last_error) / LOOP_PERIOD; // Loop period in ms
-		last_error = error;
-		output = p + i + d;
+		if (error > 0.5 || error < -0.5)
+		{
+			digitalWrite(SLEEP_A, LOW);
+			Timer1.setPeriod(0);
+		}
+		else
+		{
+			digitalWrite(SLEEP_A, HIGH);
+			p = kp / error;
+			i += ki * LOOP_PERIOD * error;
+			d = kd * (error - last_error) / LOOP_PERIOD; // Loop period in seconds
+			last_error = error;
+			output = (p + i + d);
 
-		// MOTOR TESTING
-
-		stepperA.setSpeed(0);
-		stepperA.runSpeed();
-		// long positions[2]; // Array of desired stepper positions
-
-		// positions[0] = 200;
-		// positions[1] = 200;
-		// stepperA.setSpeed(200);
-		// stepperB.setSpeed(200);
-		// steppers.moveTo(positions);
-		// steppers.runSpeedToPosition(); // Blocks until all are in position
-
-		//MOTOR TESTING
-
-		// if (output >= 0)
-		// {
-
-		// }
-		// else if (output < 0)
-		// {
-		// }
-
-		// Serial.print("PITCH: ");
-		// Serial.print(ypr[1], 4);
+			if (output >= 0)
+			{
+				digitalWrite(DIR_A, HIGH);
+				Timer1.setPeriod(output);
+			}
+			else if (output < 0)
+			{
+				digitalWrite(DIR_A, LOW);
+				Timer1.setPeriod(abs(output));
+			}
+		}
+		Serial.print("PITCH: ");
+		Serial.print(ypr[1], 4);
 
 		Serial.print("\tERROR: ");
 		Serial.print(error, 4);
 
-		// Serial.print("\tLOOP_PERIOD: ");
-		// Serial.println(LOOP_PERIOD, 4);
-
 		Serial.print("\tOUTPUT: ");
 		Serial.println(output, 4);
-
-		if (loop_count >= 50)
-		{
-			// blink LED to indicate activity
-			blink_state = !blink_state;
-			digitalWrite(LED_PIN, blink_state);
-			loop_count = 0;
-		}
-
-		loop_count = loop_count + 1;
-		delay(1);
 	}
+
+	last_micros = current_micros;
+	current_micros = micros();
+	LOOP_PERIOD = (current_micros - last_micros) / 1000000; // Loop period in seconds
+
+	// Serial.print("\tLOOP_PERIOD: ");
+	// Serial.println(LOOP_PERIOD, 0);
+
+	if (loop_count >= 50)
+	{
+		// blink LED to indicate activity
+		blink_state = !blink_state;
+		digitalWrite(LED_PIN, blink_state);
+		loop_count = 0;
+	}
+	loop_count = loop_count + 1;
 }
