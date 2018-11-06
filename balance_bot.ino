@@ -1,5 +1,5 @@
-#include <AccelStepper.h>
-#include <MultiStepper.h>
+#include "AccelStepper.h"
+#include "MultiStepper.h"
 
 #include "I2Cdev.h"
 #include "MPU6050_6Axis_MotionApps20.h"
@@ -55,7 +55,9 @@ float p = 0, i = 0, d = 0, output = 0;
 #define setpoint 0
 float error = 0, last_error = 0;
 
+// Stepper motor setup
 #define MOTOR_STEPS_REV 200
+#define STEPPER_MAX_SPEED 1000
 
 #define SLEEP_A 52
 #define STEP_A 3
@@ -64,6 +66,11 @@ float error = 0, last_error = 0;
 #define SLEEP_B 48
 #define STEP_B 4
 #define DIR_B 46
+
+AccelStepper stepperA(AccelStepper::DRIVER, STEP_A, DIR_A);
+AccelStepper stepperB(AccelStepper::DRIVER, STEP_B, DIR_B);
+
+MultiStepper steppers;
 
 // ================================================================
 // ===               INTERRUPT DETECTION ROUTINE                ===
@@ -157,11 +164,22 @@ void setup()
 	pinMode(LED_PIN, OUTPUT);
 	digitalWrite(LED_PIN, blink_state);
 
+	// Configure stepper motors
 	pinMode(SLEEP_A, OUTPUT);
 	digitalWrite(SLEEP_A, HIGH);
 
 	pinMode(SLEEP_B, OUTPUT);
 	digitalWrite(SLEEP_B, HIGH);
+
+	stepperA.setMaxSpeed(STEPPER_MAX_SPEED);
+	stepperB.setMaxSpeed(STEPPER_MAX_SPEED);
+
+	stepperA.setAcceleration(100);
+	stepperB.setAcceleration(100);
+
+	// Give them to MultiStepper to manage
+	steppers.addStepper(stepperA);
+	steppers.addStepper(stepperB);
 }
 
 // ================================================================
@@ -192,6 +210,7 @@ void loop()
 		// .
 		// .
 		// .
+		stepperA.runSpeed();
 	}
 
 	// reset interrupt flag and get INT_STATUS byte
@@ -240,6 +259,21 @@ void loop()
 		d = kd * (error - last_error) / LOOP_PERIOD; // Loop period in ms
 		last_error = error;
 		output = p + i + d;
+
+		// MOTOR TESTING
+
+		stepperA.setSpeed(0);
+		stepperA.runSpeed();
+		// long positions[2]; // Array of desired stepper positions
+
+		// positions[0] = 200;
+		// positions[1] = 200;
+		// stepperA.setSpeed(200);
+		// stepperB.setSpeed(200);
+		// steppers.moveTo(positions);
+		// steppers.runSpeedToPosition(); // Blocks until all are in position
+
+		//MOTOR TESTING
 
 		// if (output >= 0)
 		// {
