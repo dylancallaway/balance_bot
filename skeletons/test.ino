@@ -1,16 +1,16 @@
 #include "TimerOne.h"
+#include "TimerThree.h"
 
 // Stepper motor setup
-#define MOTOR_STEPS_REV 200
-#define STEPPER_MAX_SPEED 1500
-
 #define SLEEP_A 52
 #define STEP_A 11
 #define DIR_A 50
+#define stepperA Timer1
 
 #define SLEEP_B 48
-#define STEP_B 12
+#define STEP_B 5
 #define DIR_B 46
+#define stepperB Timer3
 
 float last_micros = 0, current_micros = 0, LOOP_PERIOD = 0;
 
@@ -24,16 +24,20 @@ void setup()
 	pinMode(DIR_A, OUTPUT);
 	digitalWrite(DIR_A, HIGH);
 
-	pinMode(13, OUTPUT);
+	pinMode(SLEEP_B, OUTPUT);
+	digitalWrite(SLEEP_B, HIGH);
 
-	Timer1.initialize(800);
-	Timer1.pwm(STEP_A, 64);
-	Timer1.attachInterrupt(callback); // attaches callback() as a timer overflow interrupt
-}
+	pinMode(DIR_B, OUTPUT);
+	digitalWrite(DIR_B, HIGH);
 
-void callback()
-{
-	digitalWrite(13, digitalRead(13) ^ 1);
+	stepperA.initialize();
+	stepperA.pwm(STEP_A, 256);
+
+	// stepperB.initialize();
+	// stepperB.pwm(STEP_B, 256, 3000);
+
+	stepperA.stop();
+	stepperB.stop();
 }
 
 void loop()

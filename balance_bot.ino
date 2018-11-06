@@ -1,7 +1,5 @@
 #include "TimerOne.h"
-
-#include "AccelStepper.h"
-#include "MultiStepper.h"
+#include "TimerThree.h"
 
 #include "I2Cdev.h"
 #include "MPU6050_6Axis_MotionApps20.h"
@@ -29,15 +27,15 @@ MPU6050 mpu(0x68);
 
 #define INTERRUPT_PIN 2 // use pin 2 on Arduino Uno & most boards
 #define LED_PIN 13		// (Arduino is 13, Teensy is 11, Teensy++ is 6)
-bool blink_state = false;
-int loop_count = 0;
+volatile bool blink_state = false;
+volatile int loop_count = 0;
 
 // MPU control/status vars
 bool dmpReady = false;  // set true if DMP init was successful
 uint8_t mpuIntStatus;   // holds actual interrupt status byte from MPU
 uint8_t devStatus;		// return status after each device operation (0 = success, !0 = error)
-uint16_t packetSize;	// expected DMP packet size (default is 42 bytes)
-uint16_t fifoCount;		// count of all bytes currently in FIFO
+int packetSize;			// expected DMP packet size (default is 42 bytes)
+int fifoCount;			// count of all bytes currently in FIFO
 uint8_t fifoBuffer[64]; // FIFO storage buffer
 
 // orientation/motion vars
@@ -48,7 +46,7 @@ float ypr[3];		 // [yaw, pitch, roll]   yaw/pitch/roll container and gravity vec
 // PID setup
 // #define LOOP_PERIOD 10
 float last_micros = 0, current_micros = 0, LOOP_PERIOD = 0;
-#define kp 0
+#define kp 1
 #define ki 0
 #define kd 0
 float p = 0, i = 0, d = 0, output = 0;
@@ -58,21 +56,15 @@ float p = 0, i = 0, d = 0, output = 0;
 float error = 0, last_error = 0;
 
 // Stepper motor setup
-#define MOTOR_STEPS_REV 200
-#define STEPPER_MAX_SPEED 1000
-
 #define SLEEP_A 52
-#define STEP_A 3
+#define STEP_A 11
 #define DIR_A 50
+#define stepperA Timer1
 
 #define SLEEP_B 48
-#define STEP_B 4
+#define STEP_B 5
 #define DIR_B 46
-
-AccelStepper stepperA(AccelStepper::DRIVER, STEP_A, DIR_A);
-AccelStepper stepperB(AccelStepper::DRIVER, STEP_B, DIR_B);
-
-MultiStepper steppers;
+#define stepperB Timer3
 
 // ================================================================
 // ===               INTERRUPT DETECTION ROUTINE                ===
@@ -102,8 +94,6 @@ void setup()
 	// (115200 chosen because it is required for Teapot Demo output, but it's
 	// really up to you depending on your project)
 	Serial.begin(115200);
-	while (!Serial)
-		; // wait for Leonardo enumeration, others continue immediately
 
 	// NOTE: 8MHz or slower host processors, like the Teensy @ 3.3V or Arduino
 	// Pro Mini running at 3.3V, cannot handle this baud rate reliably due to
@@ -173,147 +163,97 @@ void setup()
 	pinMode(SLEEP_B, OUTPUT);
 	digitalWrite(SLEEP_B, HIGH);
 
-	stepperA.setMaxSpeed(STEPPER_MAX_SPEED);
-	stepperB.setMaxSpeed(STEPPER_MAX_SPEED);
+	pinMode(DIR_A, OUTPUT);
+	pinMode(DIR_B, OUTPUT);
 
-	stepperA.setAcceleration(100);
-	stepperB.setAcceleration(100);
+	stepperA.initialize(0);
+	stepperA.pwm(STEP_A, 512);
 
-	// Give them to MultiStepper to manage
-	steppers.addStepper(stepperA);
-	steppers.addStepper(stepperB);
+	stepperB.initialize(0);
+	stepperB.pwm(STEP_B, 512);
 }
 
 // ================================================================
 // ===                    MAIN PROGRAM LOOP                     ===
 // ================================================================
 
+// TODO Figure out why the stepper motors are not moving...
 void loop()
 {
-
 	if (mpuInterrupt)
 	{
 		mpu.getFIFOBytes(fifoBuffer, packetSize);
 		mpu.dmpGetQuaternion(&q, fifoBuffer);
 		mpu.dmpGetGravity(&gravity, &q);
 		mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
-
 		error = ypr[1] - setpoint;
 		p = kp * error;
 		i += ki * LOOP_PERIOD * error;
-		d = kd * (error - last_error) / LOOP_PERIOD; // Loop period in ms
+		d = kd * (error - last_error) / LOOP_PERIOD; // Loop period in us (microseconds)
 		last_error = error;
 		output = p + i + d;
 
-		mpuInterrupt = false;
-	}
-	// // if programming failed, don't try to do anything
-	// if (!dmpReady)
-	// 	return;
+		if (error > 0.6 || error < -0.6)
+		{
+			stepperA.setPeriod(0);
+			stepperB.setPeriod(0);
+		}
+		else
+		{
+			if (output >= 0)
+			{
+				digitalWrite(DIR_A, HIGH);
+				digitalWrite(DIR_B, HIGH);
 
-	// // wait for MPU interrupt or extra packet(s) available
-	// while (!mpuInterrupt && fifoCount < packetSize)
-	// {
-	// 	if (mpuInterrupt && fifoCount < packetSize)
-	// 	{
-	// 		// try to get out of the infinite loop
-	// 		fifoCount = mpu.getFIFOCount();
-	// 	}
-	// 	// other program behavior stuff here
-	// 	// .
-	// 	// .
-	// 	// .
-	// 	// if you are really paranoid you can frequently test in between other
-	// 	// stuff to see if mpuInterrupt is true, and if so, "break;" from the
-	// 	// while() loop to immediately process the MPU data
-	// 	// .
-	// 	// .
-	// 	// .
-	// }
+				// stepperA.setPeriod(1000 / output);
+				// stepperB.setPeriod(1000 / output);
 
-	// // reset interrupt flag and get INT_STATUS byte
-	// mpuInterrupt = false;
-	// mpuIntStatus = mpu.getIntStatus();
+				stepperA.setPeriod(1400);
+			}
+			else if (output < 0)
+			{
+				digitalWrite(DIR_A, LOW);
+				digitalWrite(DIR_B, LOW);
 
-	// get current FIFO count
-	// fifoCount = mpu.getFIFOCount();
+				stepperA.setPeriod(1000 / abs(output));
+				stepperB.setPeriod(1000 / abs(output));
+			}
+		}
 
-	// check for overflow (this should never happen unless our code is too inefficient)
-	// if ((mpuIntStatus & _BV(MPU6050_INTERRUPT_FIFO_OFLOW_BIT)) || fifoCount >= 1024)
+		// Check for full FIFO
+		if (mpu.getFIFOCount() >= 1024)
+		{
+			mpu.resetFIFO();
+			Serial.println('FIFO overflow!');
+		}
 
-	// wait for correct available data length, should be a VERY short wait
-	// while (fifoCount < packetSize)
-	// 	fifoCount = mpu.getFIFOCount();
-
-	// if (fifoCount >= 1024)
-	// {
-	// 	// reset so we can continue cleanly
-	// 	mpu.resetFIFO();
-	// 	fifoCount = mpu.getFIFOCount();
-	// 	Serial.println(F("FIFO overflow!"));
-	// }
-	// 	// otherwise, check for DMP data ready interrupt (this should happen frequently)
-	// }
-	// else if (mpuIntStatus & _BV(MPU6050_INTERRUPT_DMP_INT_BIT))
-	// {
-
-	// read a packet from FIFO
-	// mpu.getFIFOBytes(fifoBuffer, packetSize);
-
-	// track FIFO count here in case there is > 1 packet available
-	// (this lets us immediately read more without waiting for an interrupt)
-	// fifoCount -= packetSize;
-
-	// PID
-	// Pitch is input for this configuration
-
-	// MOTOR TESTING
-
-	// long positions[2]; // Array of desired stepper positions
-
-	// positions[0] = 200;
-	// positions[1] = 200;
-	// stepperA.setSpeed(200);
-	// stepperB.setSpeed(200);
-	// steppers.moveTo(positions);
-	// steppers.runSpeedToPosition(); // Blocks until all are in position
-
-	//MOTOR TESTING
-
-	// if (output >= 0)
-	// {
-
-	// }
-	// else if (output < 0)
-	// {
-	// }
-
-	// Serial.print("PITCH: ");
-	// Serial.print(ypr[1], 4);
-
-	// Serial.print("\tERROR: ");
-	// Serial.print(error, 4);
-
-	Serial.print("\tLOOP_PERIOD: ");
-	Serial.println(LOOP_PERIOD, 4);
-
-	// Serial.print("\tOUTPUT: ");
-	// Serial.println(output, 4);
-
-	if (loop_count >= 50)
-	{
 		// Blink LED to indicate activity
-		blink_state = !blink_state;
-		digitalWrite(LED_PIN, blink_state);
-		loop_count = 0;
+		if (loop_count >= 50)
+		{
+			blink_state = !blink_state;
+			digitalWrite(LED_PIN, blink_state);
+			loop_count = 0;
+		}
+		loop_count = loop_count + 1;
+
+		// Reset interrupt flag to false
+		mpuInterrupt = false;
+
+		//Print statements for debugging
+		// Serial.print("PITCH: ");
+		// Serial.print(ypr[1], 4);
+
+		Serial.print("\tERROR: ");
+		Serial.print(error, 4);
+
+		Serial.print("\tOUTPUT: ");
+		Serial.print(output, 4);
 	}
-
-	loop_count = loop_count + 1;
-
-	stepperA.setSpeed(0);
-	stepperA.runSpeed();
 
 	last_micros = current_micros;
 	current_micros = micros();
-	LOOP_PERIOD = (current_micros - last_micros) / 1000;
+	LOOP_PERIOD = (current_micros - last_micros);
+
+	Serial.print("\tLOOP_PERIOD: ");
+	Serial.println(LOOP_PERIOD, 4);
 }
