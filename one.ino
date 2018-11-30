@@ -15,6 +15,8 @@
 #define ENC_B_PIN_A 3 // Interrupt pin
 #define ENC_B_PIN_B 8
 
+#define ENC_STEPS_REV 900
+
 MPU9250 mpu;
 Encoder encoder_A(ENC_A_PIN_A, ENC_A_PIN_B);
 Encoder encoder_B(ENC_B_PIN_A, ENC_B_PIN_B);
@@ -23,6 +25,7 @@ void setup()
 {
 	Serial.begin(115200);
 	Serial.println("***   Power on...running program.   ***");
+	delay(500);
 
 	pinMode(LED_BUILTIN, OUTPUT);
 
@@ -32,9 +35,9 @@ void setup()
 	pinMode(PWM_B_REV, OUTPUT);
 
 	Wire.begin();
-	delay(1000);
+	delay(500);
 	mpu.setup();
-	delay(1000);
+	delay(2000);
 }
 
 bool blinkstate;
@@ -59,7 +62,7 @@ void loop()
 		error = theta - setpoint;
 
 		pos_A = encoder_A.read();
-		pos_B = encoder_B.read();
+		pos_B = -encoder_B.read();
 
 		if (theta > 0.5 || theta < -0.5)
 		{
@@ -67,9 +70,7 @@ void loop()
 			analogWrite(PWM_B_FWD, 0);
 			analogWrite(PWM_A_REV, 0);
 			analogWrite(PWM_B_REV, 0);
-			blinkstate = 0;
-			digitalWrite(LED_BUILTIN, blinkstate);
-			loop_count = 0;
+			loop_count += 5;
 		}
 		else
 		{
@@ -102,14 +103,14 @@ void loop()
 				analogWrite(PWM_B_REV, output);
 			}
 
-			if (loop_count >= 50)
-			{
-				digitalWrite(LED_BUILTIN, blinkstate);
-				blinkstate = !blinkstate;
-				loop_count = 0;
-			}
-
 			loop_count += 1;
+		}
+
+		if (loop_count >= 50)
+		{
+			digitalWrite(LED_BUILTIN, blinkstate);
+			blinkstate = !blinkstate;
+			loop_count = 0;
 		}
 
 		Serial.print("Error: ");
