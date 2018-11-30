@@ -1,20 +1,28 @@
 #include "MPU9250.h"
 
+#define ENCODER_OPTIMIZE_INTERRUPTS
+#include "Encoder.h"
+
 #define PWM_A_FWD 9
 #define PWM_A_REV 6
-#define PWM_B_FWD 5
-#define PWM_B_REV 3
 
-#define ENC_A_PIN_A 8
+#define PWM_B_FWD 5
+#define PWM_B_REV 10
+
+#define ENC_A_PIN_A 2 // Interrupt pin
 #define ENC_A_PIN_B 7
 
+#define ENC_B_PIN_A 3 // Interrupt pin
+#define ENC_B_PIN_B 8
 
 MPU9250 mpu;
+Encoder encoder_A(ENC_A_PIN_A, ENC_A_PIN_B);
+Encoder encoder_B(ENC_B_PIN_A, ENC_B_PIN_B);
 
 void setup()
 {
 	Serial.begin(115200);
-	Serial.println("***   Power on successful...running program.   ***");
+	Serial.println("***   Power on...running program.   ***");
 
 	pinMode(LED_BUILTIN, OUTPUT);
 
@@ -29,8 +37,6 @@ void setup()
 	delay(1000);
 }
 
-int pos_A;
-
 bool blinkstate;
 int loop_count;
 float theta, error, last_error, output;
@@ -38,6 +44,8 @@ float cur_us, prev_us, time_delta;
 float p_gain, i_gain, d_gain;
 float kp = 1200, ki = 0, kd = 0;
 float setpoint = 0;
+
+long pos_A, pos_B;
 
 void loop()
 {
@@ -49,6 +57,9 @@ void loop()
 		mpu.update();
 		theta = PI * mpu.getPitch() / 180;
 		error = theta - setpoint;
+
+		pos_A = encoder_A.read();
+		pos_B = encoder_B.read();
 
 		if (theta > 0.5 || theta < -0.5)
 		{
@@ -107,6 +118,8 @@ void loop()
 		Serial.print(output, 5);
 		Serial.print("    Position A: ");
 		Serial.print(pos_A);
+		Serial.print("    Position B: ");
+		Serial.print(pos_B);
 		Serial.print("    Time Delta: ");
 		Serial.println(time_delta, 5);
 
