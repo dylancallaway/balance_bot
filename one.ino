@@ -37,18 +37,27 @@ void setup()
 	Wire.begin();
 	delay(500);
 	mpu.setup();
-	delay(2000);
+	delay(1000);
 }
 
 bool blinkstate;
-int loop_count;
-float theta, error, last_error, output;
 float cur_us, prev_us, time_delta;
-float p_gain, i_gain, d_gain;
-float kp = 1200, ki = 0, kd = 0;
-float setpoint = 0;
+int loop_count;
 
-long pos_A, pos_B;
+float pitch, pitch_error, last_pitch_error;
+float pitch_p_gain, pitch_i_gain, pitch_d_gain;
+float pitch_kp = 1250, pitch_ki = 0, pitch_kd = 15;
+float pitch_setpoint = 0;
+float pitch_output;
+
+long pos_A, pos_B, pos_error, last_pos_error;
+float pos_p_gain, pos_i_gain, pos_d_gain;
+float pos_kp = 1, pos_ki = 0, pos_kd = 0;
+float pos_setpoint = 0;
+float pos_output, pos_output_A, pos_output_B;
+
+float output_A, output_B;
+float pwm_A_fwd, pwm_A_rev, pwm_B_fwd, pwm_B_rev;
 
 void loop()
 {
@@ -58,13 +67,32 @@ void loop()
 	if (time_delta >= 0.01)
 	{
 		mpu.update();
-		theta = PI * mpu.getPitch() / 180;
-		error = theta - setpoint;
+		pitch = PI * mpu.getPitch() / 180;
+		pitch_error = pitch - pitch_setpoint;
+
+		pitch_p_gain = pitch_kp * pitch_error;
+		pitch_i_gain += pitch_ki * pitch_error * time_delta;
+		pitch_d_gain = pitch_kd * (pitch_error - last_pitch_error) / time_delta;
+		pitch_output = pitch_p_gain + pitch_i_gain + pitch_d_gain;
 
 		pos_A = encoder_A.read();
 		pos_B = -encoder_B.read();
 
-		if (theta > 0.5 || theta < -0.5)
+		pos_error = pos_A - pos_B;
+		pos_p_gain = pos_kp * pos_error;
+		pos_i_gain += pos_ki * pos_error * time_delta;
+		pos_d_gain = pos_kd * (pos_error - last_pos_error) / time_delta;
+		pos_output = pos_p_gain + pos_i_gain + pos_d_gain;
+		pos_output_A = pos_output / 2;
+		pos_output_B = -pos_output / 2;
+
+		output_A = pitch_output + pos_output_A;
+		output_B = pitch_output + pos_output_B;
+
+		// output_A = pos_output_A;
+		// output_B = pos_output_B;
+
+		if (pitch > 0.5 || pitch < -0.5)
 		{
 			analogWrite(PWM_A_FWD, 0);
 			analogWrite(PWM_B_FWD, 0);
@@ -74,34 +102,48 @@ void loop()
 		}
 		else
 		{
-			p_gain = kp * error;
-			i_gain += ki * error * time_delta;
-			d_gain = kd * (error - last_error) / time_delta;
-			output = p_gain + i_gain + d_gain;
+			if (output_A > 0)
+			{
+				if (output_A >= 255)
+				{
+					output_A = 255;
+				}
+				pwm_A_fwd = output_A;
+				pwm_A_rev = 0;
+			}
+			else if (output_A < 0)
+			{
+				if (output_A <= -255)
+				{
+					output_A = -255;
+				}
+				pwm_A_fwd = 0;
+				pwm_A_rev = abs(output_A);
+			}
 
-			if (output > 0)
+			if (output_B > 0)
 			{
-				if (output >= 255)
+				if (output_B >= 255)
 				{
-					output = 255;
+					output_B = 255;
 				}
-				analogWrite(PWM_A_FWD, output);
-				analogWrite(PWM_B_FWD, output);
-				analogWrite(PWM_A_REV, 0);
-				analogWrite(PWM_B_REV, 0);
+				pwm_B_fwd = output_B;
+				pwm_B_rev = 0;
 			}
-			else
+			else if (output_B < 0)
 			{
-				output = abs(output);
-				if (output >= 255)
+				if (output_B <= -255)
 				{
-					output = 255;
+					output_B = -255;
 				}
-				analogWrite(PWM_A_FWD, 0);
-				analogWrite(PWM_B_FWD, 0);
-				analogWrite(PWM_A_REV, output);
-				analogWrite(PWM_B_REV, output);
+				pwm_B_fwd = 0;
+				pwm_B_rev = abs(output_B);
 			}
+
+			analogWrite(PWM_A_FWD, pwm_A_fwd);
+			analogWrite(PWM_A_REV, pwm_A_rev);
+			analogWrite(PWM_B_FWD, pwm_B_fwd);
+			analogWrite(PWM_B_REV, pwm_B_rev);
 
 			loop_count += 1;
 		}
@@ -113,18 +155,17 @@ void loop()
 			loop_count = 0;
 		}
 
-		Serial.print("Error: ");
-		Serial.print(error, 5);
-		Serial.print("    Output: ");
-		Serial.print(output, 5);
-		Serial.print("    Position A: ");
-		Serial.print(pos_A);
-		Serial.print("    Position B: ");
-		Serial.print(pos_B);
+		Serial.print("    POS ERROR: ");
+		Serial.print(pos_error);
+		Serial.print("    POS OUT A: ");
+		Serial.print(pos_output_A);
+		Serial.print("    POS OUT B: ");
+		Serial.print(pos_output_B);
 		Serial.print("    Time Delta: ");
 		Serial.println(time_delta, 5);
 
-		last_error = error;
+		last_pitch_error = pitch_error;
+		last_pos_error = pos_error;
 		prev_us = cur_us;
 	}
 }
