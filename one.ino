@@ -1,16 +1,20 @@
 #include "MPU9250.h"
 
-#define PWM_A_FWD 12
-#define PWM_A_REV 11
+#define PWM_A_FWD 9
+#define PWM_A_REV 6
+#define PWM_B_FWD 5
+#define PWM_B_REV 3
 
-#define PWM_B_FWD 10
-#define PWM_B_REV 9
+#define ENC_A_PIN_A 8
+#define ENC_A_PIN_B 7
+
 
 MPU9250 mpu;
 
 void setup()
 {
 	Serial.begin(115200);
+	Serial.println("***   Power on successful...running program.   ***");
 
 	pinMode(LED_BUILTIN, OUTPUT);
 
@@ -25,12 +29,14 @@ void setup()
 	delay(1000);
 }
 
+int pos_A;
+
 bool blinkstate;
 int loop_count;
 float theta, error, last_error, output;
 float cur_us, prev_us, time_delta;
 float p_gain, i_gain, d_gain;
-float kp = 1000, ki = 0, kd = 0;
+float kp = 1200, ki = 0, kd = 0;
 float setpoint = 0;
 
 void loop()
@@ -41,7 +47,7 @@ void loop()
 	if (time_delta >= 0.01)
 	{
 		mpu.update();
-		theta = mpu.getPitch();
+		theta = PI * mpu.getPitch() / 180;
 		error = theta - setpoint;
 
 		if (theta > 0.5 || theta < -0.5)
@@ -50,6 +56,8 @@ void loop()
 			analogWrite(PWM_B_FWD, 0);
 			analogWrite(PWM_A_REV, 0);
 			analogWrite(PWM_B_REV, 0);
+			blinkstate = 0;
+			digitalWrite(LED_BUILTIN, blinkstate);
 			loop_count = 0;
 		}
 		else
@@ -97,6 +105,8 @@ void loop()
 		Serial.print(error, 5);
 		Serial.print("    Output: ");
 		Serial.print(output, 5);
+		Serial.print("    Position A: ");
+		Serial.print(pos_A);
 		Serial.print("    Time Delta: ");
 		Serial.println(time_delta, 5);
 
