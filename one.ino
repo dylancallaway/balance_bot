@@ -18,6 +18,7 @@
 #define ENC_STEPS_REV 900
 
 MPU9250 mpu;
+
 Encoder encoder_A(ENC_A_PIN_A, ENC_A_PIN_B);
 Encoder encoder_B(ENC_B_PIN_A, ENC_B_PIN_B);
 
@@ -52,9 +53,15 @@ float pitch_output;
 
 long pos_A, pos_B, pos_error, last_pos_error;
 float pos_p_gain, pos_i_gain, pos_d_gain;
-float pos_kp = 1, pos_ki = 0, pos_kd = 0;
+float pos_kp = 2, pos_ki = 0, pos_kd = 0.1;
 float pos_setpoint = 0;
 float pos_output, pos_output_A, pos_output_B;
+
+float tot_pos_avg, tot_pos_error, last_tot_pos_error;
+float tot_pos_kp = -0, tot_pos_ki = 0, tot_pos_kd = 0;
+float tot_pos_p_gain, tot_pos_i_gain, tot_pos_d_gain;
+float tot_pos_setpoint = 0;
+float tot_pos_output = 0;
 
 float output_A, output_B;
 float pwm_A_fwd, pwm_A_rev, pwm_B_fwd, pwm_B_rev;
@@ -66,6 +73,24 @@ void loop()
 
 	if (time_delta >= 0.01)
 	{
+		pos_A = encoder_A.read();
+		pos_B = -encoder_B.read();
+
+		pos_error = (pos_A - pos_B) - pos_setpoint;
+		pos_p_gain = pos_kp * pos_error;
+		pos_i_gain += pos_ki * pos_error * time_delta;
+		pos_d_gain = pos_kd * (pos_error - last_pos_error) / time_delta;
+		pos_output = pos_p_gain + pos_i_gain + pos_d_gain;
+		pos_output_A = pos_output / 2;
+		pos_output_B = -pos_output / 2;
+
+		tot_pos_avg = pos_A;
+		tot_pos_error = tot_pos_avg - tot_pos_setpoint;
+		tot_pos_p_gain = tot_pos_kp * tot_pos_error;
+		tot_pos_i_gain += tot_pos_ki * tot_pos_error * time_delta;
+		tot_pos_d_gain = tot_pos_kd * (tot_pos_error - last_tot_pos_error) / time_delta;
+		tot_pos_output = tot_pos_p_gain + tot_pos_i_gain + tot_pos_d_gain;
+
 		mpu.update();
 		pitch = PI * mpu.getPitch() / 180;
 		pitch_error = pitch - pitch_setpoint;
@@ -75,22 +100,8 @@ void loop()
 		pitch_d_gain = pitch_kd * (pitch_error - last_pitch_error) / time_delta;
 		pitch_output = pitch_p_gain + pitch_i_gain + pitch_d_gain;
 
-		pos_A = encoder_A.read();
-		pos_B = -encoder_B.read();
-
-		pos_error = pos_A - pos_B;
-		pos_p_gain = pos_kp * pos_error;
-		pos_i_gain += pos_ki * pos_error * time_delta;
-		pos_d_gain = pos_kd * (pos_error - last_pos_error) / time_delta;
-		pos_output = pos_p_gain + pos_i_gain + pos_d_gain;
-		pos_output_A = pos_output / 2;
-		pos_output_B = -pos_output / 2;
-
-		output_A = pitch_output + pos_output_A;
-		output_B = pitch_output + pos_output_B;
-
-		// output_A = pos_output_A;
-		// output_B = pos_output_B;
+		output_A = pitch_output + pos_output_A + tot_pos_output;
+		output_B = pitch_output + pos_output_B + tot_pos_output;
 
 		if (pitch > 0.5 || pitch < -0.5)
 		{
@@ -155,17 +166,13 @@ void loop()
 			loop_count = 0;
 		}
 
-		Serial.print("    POS ERROR: ");
-		Serial.print(pos_error);
-		Serial.print("    POS OUT A: ");
-		Serial.print(pos_output_A);
-		Serial.print("    POS OUT B: ");
-		Serial.print(pos_output_B);
+		Serial.print(pitch);
 		Serial.print("    Time Delta: ");
 		Serial.println(time_delta, 5);
 
 		last_pitch_error = pitch_error;
 		last_pos_error = pos_error;
+		last_tot_pos_error = tot_pos_error;
 		prev_us = cur_us;
 	}
 }
