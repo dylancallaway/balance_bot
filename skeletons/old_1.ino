@@ -47,13 +47,13 @@ int loop_count;
 
 float pitch, pitch_error, last_pitch_error;
 float pitch_p_gain, pitch_i_gain, pitch_d_gain;
-float pitch_kp = 1250, pitch_ki = 0, pitch_kd = 15;
+float pitch_kp = 0, pitch_ki = 0, pitch_kd = 0;
 float pitch_setpoint = 0;
 float pitch_output;
 
 long pos_A, pos_B, pos_error, last_pos_error;
 float pos_p_gain, pos_i_gain, pos_d_gain;
-float pos_kp = 2, pos_ki = 0, pos_kd = 0.1;
+float pos_kp = 0, pos_ki = 0, pos_kd = 0;
 float pos_setpoint = 0;
 float pos_output, pos_output_A, pos_output_B;
 
@@ -166,7 +166,7 @@ void loop()
 			loop_count = 0;
 		}
 
-		Serial.print(pitch, 4);
+		Serial.print(pitch, 5);
 		Serial.print("    Time Delta: ");
 		Serial.println(time_delta, 5);
 
