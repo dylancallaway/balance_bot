@@ -24,14 +24,8 @@
 MPU6050 mpu(0x68);
 //MPU6050 mpu(0x69); // <-- use for AD0 high
 
-/* =========================================================================
-   NOTE: In addition to connection 3.3v, GND, SDA, and SCL, this sketch
-   depends on the MPU-6050's INT pin being connected to the Arduino's
-   external interrupt #0 pin. On the Arduino Uno and Mega 2560, this is
-   digital I/O pin 2.
- * ========================================================================= */
-
-#define INTERRUPT_PIN 4 // use pin 4 on Arduino Pro Mini
+#define MPU_INTERRUPT_PIN 4
+#define RESET_INTERRUPT_PIN 11
 
 // Motor output PWM definitions
 #define PWM_A_FWD 9
@@ -49,8 +43,8 @@ MPU6050 mpu(0x68);
 
 #define ENC_STEPS_REV 900
 
-// Encoder encoder_A(ENC_A_PIN_A, ENC_A_PIN_B);
-// Encoder encoder_B(ENC_B_PIN_A, ENC_B_PIN_B);
+Encoder encoder_A(ENC_A_PIN_A, ENC_A_PIN_B);
+Encoder encoder_B(ENC_B_PIN_A, ENC_B_PIN_B);
 
 // MPU control/status vars
 bool dmpReady = false;  // set true if DMP init was successful
@@ -74,11 +68,19 @@ float cur_us, prev_us, time_delta;
 float output_A, output_B;
 float pwm_A_fwd, pwm_A_rev, pwm_B_fwd, pwm_B_rev;
 
+// Position control loop vars
+long pos_A, pos_B, pos_A_error, pos_B_error, last_pos_A_error, last_pos_B_error;
+float pos_A_p_gain, pos_A_i_gain, pos_A_d_gain;
+float pos_B_p_gain, pos_B_i_gain, pos_B_d_gain;
+float pos_kp = 0.02, pos_ki = 0, pos_kd = 0.01;
+float pos_A_setpoint = 0, pos_B_setpoint = 0;
+float pos_A_output, pos_B_output;
+
 // Pitch control loop vars
 float pitch, pitch_error, last_pitch_error;
 float pitch_p_gain, pitch_i_gain, pitch_d_gain;
-float pitch_kp = 0, pitch_ki = 0, pitch_kd = 0;
-float pitch_setpoint = 0;
+float pitch_kp = 800, pitch_ki = 0, pitch_kd = 15;
+float pitch_setpoint = 0.01;
 float pitch_output;
 
 // ================================================================
@@ -89,6 +91,38 @@ volatile bool mpuInterrupt = false; // indicates whether MPU interrupt pin has g
 void dmpDataReady()
 {
     mpuInterrupt = true;
+}
+
+// ================================================================
+// ===                       RESET ROUTINE                      ===
+// ================================================================
+
+void resetValues()
+{
+    while (digitalRead(RESET_INTERRUPT_PIN) == 0)
+    {
+        analogWrite(PWM_A_FWD, 0);
+        analogWrite(PWM_A_REV, 0);
+        analogWrite(PWM_B_REV, 0);
+        analogWrite(PWM_B_FWD, 0);
+        encoder_A.write(0);
+        encoder_B.write(0);
+        pos_A = 0;
+        pos_B = 0;
+        pos_A_error = 0;
+        pos_B_error = 0;
+        pos_A_output = 0;
+        pos_B_output = 0;
+        pitch_output = 0;
+        pitch = pitch_setpoint;
+        pitch_error = 0;
+        pwm_A_fwd = 0;
+        pwm_A_rev = 0;
+        pwm_B_fwd = 0;
+        pwm_B_rev = 0;
+        output_A = 0;
+        output_B = 0;
+    }
 }
 
 // ================================================================
@@ -119,7 +153,7 @@ void setup()
     // initialize device
     Serial.println(F("Initializing I2C devices..."));
     mpu.initialize();
-    pinMode(INTERRUPT_PIN, INPUT);
+    pinMode(MPU_INTERRUPT_PIN, INPUT);
 
     // verify connection
     Serial.println(F("Testing device connections..."));
@@ -144,9 +178,9 @@ void setup()
 
         // enable Arduino interrupt detection
         Serial.print(F("Enabling interrupt detection (Arduino pin change interrupt "));
-        Serial.print(digitalPinToInterrupt(INTERRUPT_PIN));
+        Serial.print(digitalPinToPCINT(MPU_INTERRUPT_PIN));
         Serial.println(F(")..."));
-        attachPCINT(digitalPinToPCINT(INTERRUPT_PIN), dmpDataReady, RISING);
+        attachPCINT(digitalPinToPCINT(MPU_INTERRUPT_PIN), dmpDataReady, RISING);
         mpuIntStatus = mpu.getIntStatus();
 
         // set our DMP Ready flag so the main loop() function knows it's okay to use it
@@ -169,6 +203,12 @@ void setup()
 
     // configure LED for output
     pinMode(LED_BUILTIN, OUTPUT);
+
+    // Configure reset interrupt pin as INPUT and add to PCint
+    pinMode(RESET_INTERRUPT_PIN, INPUT_PULLUP);
+    attachPCINT(digitalPinToPCINT(RESET_INTERRUPT_PIN), resetValues, CHANGE);
+    Serial.print(F("Enabling interrupt detection (Arduino pin change interrupt "));
+    Serial.println(digitalPinToPCINT(RESET_INTERRUPT_PIN));
 }
 
 // ================================================================
@@ -240,29 +280,48 @@ void loop()
         // ===                    CONTROL CALCULATION                   ===
         // ================================================================
 
-        // Get pitch
-        pitch = ypr[1];
-
         // Calculate time delta since last control calc
         prev_us = cur_us;
         cur_us = micros();
         time_delta = (cur_us - prev_us) / 1000000;
 
+        // Get positions
+        pos_A = encoder_A.read();
+        pos_B = -encoder_B.read();
+
+        // Get pitch
+        pitch = ypr[1];
+
+        // Calculate position output
+        pos_A_error = pos_A - pos_A_setpoint;
+        pos_A_p_gain = pos_kp * pos_A_error;
+        pos_A_i_gain += pos_ki * pos_A_error * time_delta;
+        pos_A_d_gain = pos_kd * (pos_A_error - last_pos_A_error) / time_delta;
+        pos_A_output = pos_A_p_gain + pos_A_i_gain + pos_A_d_gain;
+
+        pos_B_error = pos_B - pos_B_setpoint;
+        pos_B_p_gain = pos_kp * pos_B_error;
+        pos_B_i_gain += pos_ki * pos_B_error * time_delta;
+        pos_B_d_gain = pos_kd * (pos_B_error - last_pos_B_error) / time_delta;
+        pos_B_output = -(pos_B_p_gain + pos_B_i_gain + pos_B_d_gain);
+
+        // Calculate pitch output
         pitch_error = pitch - pitch_setpoint;
         pitch_p_gain = pitch_kp * pitch_error;
         pitch_i_gain += pitch_ki * pitch_error * time_delta;
         pitch_d_gain = pitch_kd * (pitch_error - last_pitch_error) / time_delta;
         pitch_output = pitch_p_gain + pitch_i_gain + pitch_d_gain;
 
-        output_A = pitch_output;
-        output_B = pitch_output;
+        // Calculate total output
+        output_A = pos_A_output;
+        output_B = pos_B_output;
 
-        if (pitch_error > 0.5 || pitch_error < -0.5)
+        if (pitch_error > 0.4 || pitch_error < -0.4)
         {
             analogWrite(PWM_A_FWD, 0);
-            analogWrite(PWM_B_FWD, 0);
             analogWrite(PWM_A_REV, 0);
             analogWrite(PWM_B_REV, 0);
+            analogWrite(PWM_B_FWD, 0);
             loop_count += 1;
         }
         else
@@ -321,13 +380,23 @@ void loop()
             loop_count = 0;
         }
 
-        Serial.print(" Pitch: ");
-        Serial.print(pitch, 5);
-        Serial.print("    FIFOCOUNT: ");
-        Serial.print(fifoCount);
-        Serial.print("    Time Delta: ");
+        // Serial.print("Pitch Error: ");
+        Serial.print(pitch_error, 5);
+        Serial.print("   Positon A Error: ");
+        Serial.print(pos_A_error);
+        Serial.print("   Positon B Error: ");
+        Serial.print(pos_B_error);
+        // Serial.print("   Position A Output: ");
+        // Serial.print(pos_A_output);
+        // Serial.print("   Position B Output: ");
+        // Serial.print(pos_B_output);
+        // Serial.print("   FiFo Count: ");
+        // Serial.print(fifoCount);
+        Serial.print("   Time Delta: ");
         Serial.println(time_delta, 5);
 
+        last_pos_A_error = pos_A_error;
+        last_pos_B_error = pos_B_error;
         last_pitch_error = pitch_error;
         prev_us = cur_us;
     }
