@@ -35,11 +35,11 @@ MPU6050 mpu(0x68);
 #define PWM_B_REV 10
 
 // Motor encoder definitions
-#define ENC_A_PIN_A 2 // Interrupt pin
-#define ENC_A_PIN_B 7
+#define ENC_A_PIN_A 3 // Interrupt pin
+#define ENC_A_PIN_B 8
 
-#define ENC_B_PIN_A 3 // Interrupt pin
-#define ENC_B_PIN_B 8
+#define ENC_B_PIN_A 2 // Interrupt pin
+#define ENC_B_PIN_B 7
 
 #define ENC_STEPS_REV 900
 
@@ -72,15 +72,15 @@ float pwm_A_fwd, pwm_A_rev, pwm_B_fwd, pwm_B_rev;
 long pos_A, pos_B, pos_A_error, pos_B_error, last_pos_A_error, last_pos_B_error;
 float pos_A_p_gain, pos_A_i_gain, pos_A_d_gain;
 float pos_B_p_gain, pos_B_i_gain, pos_B_d_gain;
-float pos_kp = 0.02, pos_ki = 0, pos_kd = 0.01;
+float pos_kp = -0, pos_ki = 0, pos_kd = 0;
 float pos_A_setpoint = 0, pos_B_setpoint = 0;
 float pos_A_output, pos_B_output;
 
 // Pitch control loop vars
 float pitch, pitch_error, last_pitch_error;
 float pitch_p_gain, pitch_i_gain, pitch_d_gain;
-float pitch_kp = 800, pitch_ki = 0, pitch_kd = 15;
-float pitch_setpoint = 0.01;
+float pitch_kp = 800, pitch_ki = 0, pitch_kd = 30;
+float pitch_setpoint = 0.014;
 float pitch_output;
 
 // ================================================================
@@ -286,8 +286,8 @@ void loop()
         time_delta = (cur_us - prev_us) / 1000000;
 
         // Get positions
-        pos_A = encoder_A.read();
-        pos_B = -encoder_B.read();
+        pos_A = -encoder_A.read();
+        pos_B = encoder_B.read();
 
         // Get pitch
         pitch = ypr[1];
@@ -303,7 +303,7 @@ void loop()
         pos_B_p_gain = pos_kp * pos_B_error;
         pos_B_i_gain += pos_ki * pos_B_error * time_delta;
         pos_B_d_gain = pos_kd * (pos_B_error - last_pos_B_error) / time_delta;
-        pos_B_output = -(pos_B_p_gain + pos_B_i_gain + pos_B_d_gain);
+        pos_B_output = pos_B_p_gain + pos_B_i_gain + pos_B_d_gain;
 
         // Calculate pitch output
         pitch_error = pitch - pitch_setpoint;
@@ -313,8 +313,8 @@ void loop()
         pitch_output = pitch_p_gain + pitch_i_gain + pitch_d_gain;
 
         // Calculate total output
-        output_A = pos_A_output;
-        output_B = pos_B_output;
+        output_A = pitch_output + pos_A_output;
+        output_B = pitch_output + pos_B_output;
 
         if (pitch_error > 0.4 || pitch_error < -0.4)
         {
