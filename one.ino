@@ -64,23 +64,23 @@ bool blinkstate = false;
 int loop_count;
 
 // Control loop vars
+bool ready_flag = 0;
 float cur_us, prev_us, time_delta;
 float output_A, output_B;
 float pwm_A_fwd, pwm_A_rev, pwm_B_fwd, pwm_B_rev;
 
 // Position control loop vars
-long pos_A, pos_B, pos_A_error, pos_B_error, last_pos_A_error, last_pos_B_error;
-float pos_A_p_gain, pos_A_i_gain, pos_A_d_gain;
-float pos_B_p_gain, pos_B_i_gain, pos_B_d_gain;
-float pos_kp = -0, pos_ki = 0, pos_kd = 0;
-float pos_A_setpoint = 0, pos_B_setpoint = 0;
-float pos_A_output, pos_B_output;
+long pos_A, pos_B, pos_error, last_pos_error;
+float pos_p_gain, pos_i_gain, pos_d_gain;
+float pos_kp = -0.5, pos_ki = 0, pos_kd = 0;
+float pos_setpoint = 0;
+float pos_output;
 
 // Pitch control loop vars
 float pitch, pitch_error, last_pitch_error;
 float pitch_p_gain, pitch_i_gain, pitch_d_gain;
-float pitch_kp = 800, pitch_ki = 0, pitch_kd = 30;
-float pitch_setpoint = 0.014;
+float pitch_kp = 800, pitch_ki = 0, pitch_kd = 25;
+float pitch_setpoint = 0.015;
 float pitch_output;
 
 // ================================================================
@@ -109,10 +109,8 @@ void resetValues()
         encoder_B.write(0);
         pos_A = 0;
         pos_B = 0;
-        pos_A_error = 0;
-        pos_B_error = 0;
-        pos_A_output = 0;
-        pos_B_output = 0;
+        pos_error = 0;
+        pos_output = 0;
         pitch_output = 0;
         pitch = pitch_setpoint;
         pitch_error = 0;
@@ -122,6 +120,7 @@ void resetValues()
         pwm_B_rev = 0;
         output_A = 0;
         output_B = 0;
+        ready_flag = 1;
     }
 }
 
@@ -293,17 +292,11 @@ void loop()
         pitch = ypr[1];
 
         // Calculate position output
-        pos_A_error = pos_A - pos_A_setpoint;
-        pos_A_p_gain = pos_kp * pos_A_error;
-        pos_A_i_gain += pos_ki * pos_A_error * time_delta;
-        pos_A_d_gain = pos_kd * (pos_A_error - last_pos_A_error) / time_delta;
-        pos_A_output = pos_A_p_gain + pos_A_i_gain + pos_A_d_gain;
-
-        pos_B_error = pos_B - pos_B_setpoint;
-        pos_B_p_gain = pos_kp * pos_B_error;
-        pos_B_i_gain += pos_ki * pos_B_error * time_delta;
-        pos_B_d_gain = pos_kd * (pos_B_error - last_pos_B_error) / time_delta;
-        pos_B_output = pos_B_p_gain + pos_B_i_gain + pos_B_d_gain;
+        pos_error = pos_A - pos_B - pos_setpoint;
+        pos_p_gain = pos_kp * pos_error;
+        pos_i_gain += pos_ki * pos_error * time_delta;
+        pos_d_gain = pos_kd * (pos_error - last_pos_error) / time_delta;
+        pos_output = pos_p_gain + pos_i_gain + pos_d_gain;
 
         // Calculate pitch output
         pitch_error = pitch - pitch_setpoint;
@@ -313,16 +306,28 @@ void loop()
         pitch_output = pitch_p_gain + pitch_i_gain + pitch_d_gain;
 
         // Calculate total output
-        output_A = pitch_output + pos_A_output;
-        output_B = pitch_output + pos_B_output;
+        output_A = pos_output;
+        output_B = -pos_output;
 
-        if (pitch_error > 0.4 || pitch_error < -0.4)
+        if (pitch_error > 0.4 || pitch_error < -0.4 || !ready_flag)
         {
             analogWrite(PWM_A_FWD, 0);
             analogWrite(PWM_A_REV, 0);
             analogWrite(PWM_B_REV, 0);
             analogWrite(PWM_B_FWD, 0);
-            loop_count += 1;
+            if (ready_flag)
+            {
+                loop_count += 1;
+            }
+            else if (pitch_error < 0.01 && pitch_error > -0.01)
+            {
+                loop_count += 100;
+            }
+            else
+            {
+                digitalWrite(LED_BUILTIN, LOW);
+                loop_count = 0;
+            }
         }
         else
         {
@@ -380,14 +385,12 @@ void loop()
             loop_count = 0;
         }
 
-        // Serial.print("Pitch Error: ");
+        Serial.print("Pitch Error: ");
         Serial.print(pitch_error, 5);
-        Serial.print("   Positon A Error: ");
-        Serial.print(pos_A_error);
-        Serial.print("   Positon B Error: ");
-        Serial.print(pos_B_error);
+        Serial.print("   Positon Error: ");
+        Serial.print(pos_error);
         // Serial.print("   Position A Output: ");
-        // Serial.print(pos_A_output);
+        // Serial.print(pos_output);
         // Serial.print("   Position B Output: ");
         // Serial.print(pos_B_output);
         // Serial.print("   FiFo Count: ");
@@ -395,8 +398,7 @@ void loop()
         Serial.print("   Time Delta: ");
         Serial.println(time_delta, 5);
 
-        last_pos_A_error = pos_A_error;
-        last_pos_B_error = pos_B_error;
+        last_pos_error = pos_error;
         last_pitch_error = pitch_error;
         prev_us = cur_us;
     }
