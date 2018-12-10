@@ -72,15 +72,15 @@ float pwm_A_fwd, pwm_A_rev, pwm_B_fwd, pwm_B_rev;
 // Position control loop vars
 long pos_A, pos_B, pos_error, last_pos_error;
 float pos_p_gain, pos_i_gain, pos_d_gain;
-float pos_kp = -0.5, pos_ki = 0, pos_kd = 0;
+float pos_kp = -1, pos_ki = 0, pos_kd = -0.01;
 float pos_setpoint = 0;
 float pos_output;
 
 // Pitch control loop vars
 float pitch, pitch_error, last_pitch_error;
 float pitch_p_gain, pitch_i_gain, pitch_d_gain;
-float pitch_kp = 800, pitch_ki = 0, pitch_kd = 25;
-float pitch_setpoint = 0.015;
+float pitch_kp = 800, pitch_ki = 10000, pitch_kd = 25;
+float pitch_setpoint = 0.032;
 float pitch_output;
 
 // ================================================================
@@ -114,6 +114,8 @@ void resetValues()
         pitch_output = 0;
         pitch = pitch_setpoint;
         pitch_error = 0;
+        last_pitch_error = 0;
+        pitch_i_gain = 0;
         pwm_A_fwd = 0;
         pwm_A_rev = 0;
         pwm_B_fwd = 0;
@@ -306,8 +308,8 @@ void loop()
         pitch_output = pitch_p_gain + pitch_i_gain + pitch_d_gain;
 
         // Calculate total output
-        output_A = pos_output;
-        output_B = -pos_output;
+        output_A = pitch_output + pos_output;
+        output_B = pitch_output - pos_output;
 
         if (pitch_error > 0.4 || pitch_error < -0.4 || !ready_flag)
         {
@@ -319,7 +321,7 @@ void loop()
             {
                 loop_count += 1;
             }
-            else if (pitch_error < 0.01 && pitch_error > -0.01)
+            else if (pitch_error < 0.02 && pitch_error > -0.02)
             {
                 loop_count += 100;
             }
@@ -387,8 +389,8 @@ void loop()
 
         Serial.print("Pitch Error: ");
         Serial.print(pitch_error, 5);
-        Serial.print("   Positon Error: ");
-        Serial.print(pos_error);
+        Serial.print("   Pitch I Gain: ");
+        Serial.print(pitch_i_gain);
         // Serial.print("   Position A Output: ");
         // Serial.print(pos_output);
         // Serial.print("   Position B Output: ");
