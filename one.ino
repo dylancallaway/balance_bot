@@ -72,14 +72,14 @@ float pwm_A_fwd, pwm_A_rev, pwm_B_fwd, pwm_B_rev;
 // Position control loop vars
 long pos_A, pos_B, pos_error, last_pos_error;
 float pos_p_gain, pos_i_gain, pos_d_gain;
-float pos_kp = -1, pos_ki = 0, pos_kd = -0.01;
+float pos_kp = -1.2, pos_ki = 0, pos_kd = -0.015;
 float pos_setpoint = 0;
 float pos_output;
 
 // Pitch control loop vars
 float pitch, pitch_error, last_pitch_error;
 float pitch_p_gain, pitch_i_gain, pitch_d_gain;
-float pitch_kp = 800, pitch_ki = 10000, pitch_kd = 25;
+float pitch_kp = 850, pitch_ki = 10000, pitch_kd = 25;
 float pitch_setpoint = 0.032;
 float pitch_output;
 
@@ -110,6 +110,7 @@ void resetValues()
         pos_A = 0;
         pos_B = 0;
         pos_error = 0;
+        last_pos_error = 0;
         pos_output = 0;
         pitch_output = 0;
         pitch = pitch_setpoint;
